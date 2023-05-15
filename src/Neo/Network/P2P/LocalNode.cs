@@ -9,9 +9,13 @@
 // modifications are permitted.
 
 using Akka.Actor;
+using Akka.Configuration;
+using Akka.IO;
 using Neo.IO;
+using Neo.IO.Actors;
 using Neo.Network.P2P.Payloads;
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -133,7 +137,7 @@ namespace Neo.Network.P2P
             IPHostEntry entry;
             try
             {
-                entry = Dns.GetHostEntry(hostNameOrAddress);
+                entry = System.Net.Dns.GetHostEntry(hostNameOrAddress);
             }
             catch (SocketException)
             {
@@ -276,12 +280,33 @@ namespace Neo.Network.P2P
         /// <returns>The <see cref="Akka.Actor.Props"/> object used for creating the <see cref="LocalNode"/> actor.</returns>
         public static Props Props(NeoSystem system)
         {
-            return Akka.Actor.Props.Create(() => new LocalNode(system));
+            return Akka.Actor.Props.Create(() => new LocalNode(system)).WithMailbox("local-node-mailbox");
         }
 
         protected override Props ProtocolProps(object connection, IPEndPoint remote, IPEndPoint local)
         {
             return RemoteNode.Props(system, this, connection, remote, local);
+        }
+    }
+
+    internal class LocalNodeMailbox : PriorityMailbox
+    {
+        public LocalNodeMailbox(Settings settings, Config config) : base(settings, config) { }
+
+        internal protected override bool IsHighPriority(object message)
+        {
+            return message switch
+            {
+                Message msg => msg.Command switch
+                {
+                    MessageCommand.Extensible or MessageCommand.FilterAdd or MessageCommand.FilterClear or MessageCommand.FilterLoad or MessageCommand.Verack or MessageCommand.Version or MessageCommand.Alert => true,
+                    _ => false,
+                },
+                Tcp.ConnectionClosed _ or Connection.Close _ or Connection.Ack _ => true,
+                LocalNode.RelayDirectly relay => relay.Inventory is Block || relay.Inventory is ExtensiblePayload,
+                //LocalNode.SendDirectly send => send.Inventory is Block || send.Inventory is ExtensiblePayload,
+                _ => false,
+            };
         }
     }
 }
