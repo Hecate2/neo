@@ -12,6 +12,7 @@ namespace neo.Network.P2P.Limiters
     public class TotalTransactionFromSinglePeer : Limiter
     {
         public readonly ConcurrentDictionary<IPEndPoint, uint> totalTransactionCountFromSinglePeer = new();
+        public long previousBanTime = 0;
         public uint maxTransactionCountFromSinglePeer;
 
         public TotalTransactionFromSinglePeer(ProtocolSettings settings) : base(settings)
@@ -43,7 +44,13 @@ namespace neo.Network.P2P.Limiters
                 count = 0;
             count += 1;
             totalTransactionCountFromSinglePeer[remoteNode.Remote] = count;
-            return count <= maxTransactionCountFromSinglePeer;
+            if (count <= maxTransactionCountFromSinglePeer)
+                return true;
+            else
+            {
+                previousBanTime = DateTimeOffset.Now.ToUnixTimeSeconds();
+                return false;
+            }
         }
 
         /// <summary>
@@ -52,7 +59,8 @@ namespace neo.Network.P2P.Limiters
         /// </summary>
         public override void Clear(NeoSystem system, Block block)
         {
-            totalTransactionCountFromSinglePeer.Clear();
+            if (DateTimeOffset.Now.ToUnixTimeSeconds() - previousBanTime >= 15)
+                totalTransactionCountFromSinglePeer.Clear();
         }
     }
 }
