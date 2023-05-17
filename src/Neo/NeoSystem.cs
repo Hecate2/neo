@@ -9,6 +9,7 @@
 // modifications are permitted.
 
 using Akka.Actor;
+using neo.Network.P2P.Limiters;
 using Neo.IO.Caching;
 using Neo.Ledger;
 using Neo.Network.P2P;
@@ -64,6 +65,8 @@ namespace Neo
         /// The <see cref="Network.P2P.LocalNode"/> actor of the <see cref="NeoSystem"/>.
         /// </summary>
         public IActorRef LocalNode { get; }
+
+        public Limiter[] Limiters { get; }
 
         /// <summary>
         /// The <see cref="Network.P2P.TaskManager"/> actor of the <see cref="NeoSystem"/>.
@@ -128,6 +131,9 @@ namespace Neo
             this.TxRouter = ActorSystem.ActorOf(TransactionRouter.Props(this));
             foreach (var plugin in Plugin.Plugins)
                 plugin.OnSystemLoaded(this);
+            Limiters = typeof(Limiter).Assembly.GetTypes()
+                .Where(t => t.IsSubclassOf(typeof(Limiter)) && !t.IsAbstract)
+                .Select(t => (Limiter)Activator.CreateInstance(t, settings)).ToArray();
             Blockchain.Ask(new Blockchain.Initialize()).Wait();
         }
 
@@ -163,6 +169,8 @@ namespace Neo
 
         public void Dispose()
         {
+            foreach (Limiter l in Limiters)
+                l.Dispose();
             foreach (var p in Plugin.Plugins)
                 p.Dispose();
             EnsureStopped(LocalNode);

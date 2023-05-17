@@ -24,7 +24,7 @@ using System.Net;
 
 namespace Neo.Network.P2P
 {
-    public delegate bool MessageReceivedHandler(NeoSystem system, Message message);
+    public delegate bool MessageReceivedHandler(NeoSystem system, Message message, RemoteNode remoteNode=null);
 
     partial class RemoteNode
     {
@@ -56,7 +56,7 @@ namespace Neo.Network.P2P
         private void OnMessage(Message msg)
         {
             foreach (MessageReceivedHandler handler in handlers)
-                if (!handler(system, msg))
+                if (!handler(system, msg, this))
                     return;
             if (Version == null)
             {
