@@ -29,7 +29,8 @@ namespace Neo.Persistence
         /// Initializes a new instance of the <see cref="SnapshotCache"/> class.
         /// </summary>
         /// <param name="store">An <see cref="IReadOnlyStore"/> to create a readonly cache; or an <see cref="ISnapshot"/> to create a snapshot cache.</param>
-        public SnapshotCache(IReadOnlyStore store)
+        /// <param name="writeGlobalCache"></param>
+        public SnapshotCache(IReadOnlyStore store, bool writeGlobalCache = false) : base(writeGlobalCache)
         {
             this.store = store;
             this.snapshot = store as ISnapshot;

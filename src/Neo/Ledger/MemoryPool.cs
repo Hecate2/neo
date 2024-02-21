@@ -13,12 +13,14 @@ using Akka.Util.Internal;
 using Neo.Network.P2P;
 using Neo.Network.P2P.Payloads;
 using Neo.Persistence;
+using Neo.SmartContract;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Neo.Ledger
 {
@@ -339,6 +341,15 @@ namespace Neo.Ledger
                 });
 
             if (!_unsortedTransactions.ContainsKey(tx.Hash)) return VerifyResult.OutOfMemory;
+
+            if (!GlobalCache.IsFull && snapshot.writeGlobalReadOnlyCache)
+                Task.Run(() =>
+                {
+                    using ApplicationEngine engine = ApplicationEngine.Create(TriggerType.Application, tx, _system.StoreViewWriteGlobalCache, persistingBlock: null, _system.Settings, tx.SystemFee);
+                    engine.LoadScript(tx.Script);
+                    engine.Execute();
+                });
+
             return VerifyResult.Succeed;
         }
 

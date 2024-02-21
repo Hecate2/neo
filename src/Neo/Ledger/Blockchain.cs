@@ -472,6 +472,7 @@ namespace Neo.Ledger
                 snapshot.Commit();
             }
             Committed?.Invoke(system, block);
+            GlobalCache.Clear();
             system.MemPool.UpdatePoolForBlockPersisted(block, system.StoreView);
             extensibleWitnessWhiteList = null;
             block_cache.Remove(block.PrevHash);

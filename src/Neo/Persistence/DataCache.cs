@@ -45,6 +45,12 @@ namespace Neo.Persistence
 
         private readonly Dictionary<StorageKey, Trackable> dictionary = new();
         private readonly HashSet<StorageKey> changeSet = new();
+        public bool writeGlobalReadOnlyCache { get; init; }
+
+        public DataCache(bool writeGlobalReadOnlyCache = false)
+        {
+            this.writeGlobalReadOnlyCache = writeGlobalReadOnlyCache;
+        }
 
         /// <summary>
         /// Reads a specified entry from the cache. If the entry is not in the cache, it will be automatically loaded from the underlying storage.
@@ -65,12 +71,24 @@ namespace Neo.Persistence
                     }
                     else
                     {
-                        trackable = new Trackable
+                        if (GlobalCache.TryGetValue(key, out StorageItem value))
+                            trackable = new Trackable
+                            {
+                                Key = key,
+                                Item = value,
+                                State = TrackState.None
+                            };
+                        else
                         {
-                            Key = key,
-                            Item = GetInternal(key),
-                            State = TrackState.None
-                        };
+                            trackable = new Trackable
+                            {
+                                Key = key,
+                                Item = GetInternal(key),
+                                State = TrackState.None
+                            };
+                            if (writeGlobalReadOnlyCache)
+                                GlobalCache.Set(key, value);
+                        }
                         dictionary.Add(key, trackable);
                     }
                     return trackable.Item;
@@ -125,22 +143,31 @@ namespace Neo.Persistence
         public virtual void Commit()
         {
             LinkedList<StorageKey> deletedItem = new();
-            foreach (Trackable trackable in GetChangeSet())
-                switch (trackable.State)
-                {
-                    case TrackState.Added:
-                        AddInternal(trackable.Key, trackable.Item);
-                        trackable.State = TrackState.None;
-                        break;
-                    case TrackState.Changed:
-                        UpdateInternal(trackable.Key, trackable.Item);
-                        trackable.State = TrackState.None;
-                        break;
-                    case TrackState.Deleted:
-                        DeleteInternal(trackable.Key);
-                        deletedItem.AddFirst(trackable.Key);
-                        break;
-                }
+            GlobalCache.l.EnterWriteLock();
+            try
+            {
+                foreach (Trackable trackable in GetChangeSet())
+                    switch (trackable.State)
+                    {
+                        case TrackState.Added:
+                            // GlobalReadOnlyCache.SetWithoutLock(trackable.Key, trackable.Item);
+                            // No need to add to cache. The cache is used only for reading.
+                            AddInternal(trackable.Key, trackable.Item);
+                            trackable.State = TrackState.None;
+                            break;
+                        case TrackState.Changed:
+                            GlobalCache.RemoveWithoutLock(trackable.Key);
+                            UpdateInternal(trackable.Key, trackable.Item);
+                            trackable.State = TrackState.None;
+                            break;
+                        case TrackState.Deleted:
+                            GlobalCache.RemoveWithoutLock(trackable.Key);
+                            DeleteInternal(trackable.Key);
+                            deletedItem.AddFirst(trackable.Key);
+                            break;
+                    }
+            }
+            finally { GlobalCache.l.ExitWriteLock(); }
             foreach (StorageKey key in deletedItem)
             {
                 dictionary.Remove(key);
@@ -488,7 +515,12 @@ namespace Neo.Persistence
                         return null;
                     return trackable.Item;
                 }
-                StorageItem value = TryGetInternal(key);
+                if (!GlobalCache.TryGetValue(key, out StorageItem value))
+                {
+                    value = TryGetInternal(key);
+                    if (writeGlobalReadOnlyCache)
+                        GlobalCache.Set(key, value);
+                }
                 if (value == null) return null;
                 dictionary.Add(key, new Trackable
                 {
